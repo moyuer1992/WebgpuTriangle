@@ -23,7 +23,7 @@ const init = async (canvas: HTMLCanvasElement) => {
   const device = await adapter.requestDevice() as GPUDevice
   const context = canvas.getContext('webgpu') as GPUCanvasContext
   const devicePixelRatio = window.devicePixelRatio || 1
-  const presentationFormat = context.getPreferredFormat(adapter)
+  const presentationFormat = context.getPreferredFormat(adapter) as GPUTextureFormat
   const presentationSize = [
     canvas.clientWidth * devicePixelRatio,
     canvas.clientHeight * devicePixelRatio,
@@ -34,20 +34,19 @@ const init = async (canvas: HTMLCanvasElement) => {
     size: presentationSize,
   })
   return {
-    adapter,
     device,
     context,
+    presentationFormat
   }
 }
 
 const createPipeline = (
   vertexShaderSource: string,
   fragShaderSource: string,
-  adapter: GPUAdapter,
   device: GPUDevice,
   context: GPUCanvasContext,
+  presentationFormat: GPUTextureFormat,
 ) => {
-  const presentationFormat = context.getPreferredFormat(adapter)
   return device.createRenderPipeline({
     vertex: {
       module: device.createShaderModule({
@@ -75,16 +74,16 @@ const createPipeline = (
 async function main () {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
   const {
-    adapter,
     device,
     context,
+    presentationFormat,
   } = await init(canvas)
   const pipeline = createPipeline(
     vertexShaderSource,
     fragShaderSource,
-    adapter as GPUAdapter,
     device as GPUDevice,
     context as GPUCanvasContext,
+    presentationFormat as GPUTextureFormat
   )
   const frame = () => {
     const commandEncoder = device.createCommandEncoder()
