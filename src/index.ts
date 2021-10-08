@@ -17,36 +17,70 @@ const fragShaderSource: string = `
     return vec4<f32>(1.0, 0.0, 0.0, 1.0);
   }
 `
+interface WebGPUInfo {
+  adapter: GPUAdapter
+  device: GPUDevice
+  context: GPUCanvasContext
+}
 
-const init = async (canvas: HTMLCanvasElement) => {
-  const adapter = await navigator.gpu.requestAdapter() as GPUAdapter
-  const device = await adapter.requestDevice() as GPUDevice
-  const context = canvas.getContext('webgpu') as GPUCanvasContext
-  const devicePixelRatio = window.devicePixelRatio || 1
-  const presentationFormat = context.getPreferredFormat(adapter) as GPUTextureFormat
-  const presentationSize = [
+const getPresentationFormat = (context: GPUCanvasContext, adapter: GPUAdapter): GPUTextureFormat => {
+  return context.getPreferredFormat(adapter) as GPUTextureFormat
+}
+
+const getPresentationSize = (canvas: HTMLCanvasElement, devicePixelRatio: number): [number, number] => {
+  return [
     canvas.clientWidth * devicePixelRatio,
     canvas.clientHeight * devicePixelRatio,
   ]
+}
+
+const getDevicePixelRatio = (): number => {
+  return window.devicePixelRatio || 1
+}
+
+const getWebGPUInfo = async (canvas: HTMLCanvasElement): Promise<WebGPUInfo> => {
+  const adapter: GPUAdapter = await navigator.gpu.requestAdapter()
+  const device: GPUDevice = await adapter.requestDevice()
+  const context: GPUCanvasContext = canvas.getContext('webgpu')
+  return {
+    adapter,
+    device,
+    context,
+  }
+}
+
+const init = async (canvas: HTMLCanvasElement): Promise<WebGPUInfo> => {
+  const {
+    adapter,
+    device,
+    context,
+  } = await getWebGPUInfo(canvas)
+  const devicePixelRatio: number = getDevicePixelRatio()
+  const presentationFormat: GPUTextureFormat = getPresentationFormat(context, adapter)
+  const presentationSize: Array<number> = getPresentationSize(canvas, devicePixelRatio)
   context.configure({
     device,
     format: presentationFormat,
     size: presentationSize,
   })
   return {
+    adapter,
     device,
     context,
-    presentationFormat
   }
 }
 
 const createPipeline = (
   vertexShaderSource: string,
   fragShaderSource: string,
-  device: GPUDevice,
-  context: GPUCanvasContext,
-  presentationFormat: GPUTextureFormat,
+  webGpuInfo: WebGPUInfo,
 ) => {
+  const {
+    adapter,
+    device,
+    context,
+  } = webGpuInfo
+  const presentationFormat = getPresentationFormat(context, adapter) as GPUTextureFormat
   return device.createRenderPipeline({
     vertex: {
       module: device.createShaderModule({
@@ -71,40 +105,46 @@ const createPipeline = (
   })
 }
 
-async function main () {
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement
+const drawFrame = (pipeline: GPURenderPipeline, webGpuInfo: WebGPUInfo): void => {
   const {
     device,
     context,
-    presentationFormat,
-  } = await init(canvas)
+  } = webGpuInfo
+  const commandEncoder = device.createCommandEncoder()
+  const textureView = context.getCurrentTexture().createView()
+
+  const renderPassDescriptor: GPURenderPassDescriptor = {
+    colorAttachments: [
+      {
+        view: textureView,
+        loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        storeOp: 'store',
+      },
+    ],
+  }
+
+  const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
+  passEncoder.setPipeline(pipeline)
+  passEncoder.draw(3, 1, 0, 0)
+  passEncoder.endPass()
+
+  device.queue.submit([commandEncoder.finish()])
+}
+
+async function main () {
+  const canvas = document.getElementById('canvas') as HTMLCanvasElement
+  const webGpuInfo = await init(canvas)
   const pipeline = createPipeline(
     vertexShaderSource,
     fragShaderSource,
-    device as GPUDevice,
-    context as GPUCanvasContext,
-    presentationFormat as GPUTextureFormat
+    webGpuInfo,
   )
+  const {
+    device,
+    context,
+  } = webGpuInfo
   const frame = () => {
-    const commandEncoder = device.createCommandEncoder()
-    const textureView = context.getCurrentTexture().createView()
-
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: textureView,
-          loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-          storeOp: 'store',
-        },
-      ],
-    }
-
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
-    passEncoder.setPipeline(pipeline)
-    passEncoder.draw(3, 1, 0, 0)
-    passEncoder.endPass()
-
-    device.queue.submit([commandEncoder.finish()])
+    drawFrame(pipeline, webGpuInfo)
     requestAnimationFrame(frame)
   }
   requestAnimationFrame(frame)
